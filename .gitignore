@@ -1,0 +1,6 @@
+.database_secret*
+*gz
+*~
+.*~
+*pyc
+*log
