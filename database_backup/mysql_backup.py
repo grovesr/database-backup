@@ -101,6 +101,8 @@ USAGE
         keepdays = args.keepdays
         secretfile = args.secretfile
         verbose = args.verbose
+        if not os.path.isdir(backupdir):
+            os.makedirs(backupdir)
         logging.basicConfig(filename=backupdir+"/backuplog.log", 
                             format='%(levelname)s:%(asctime)s %(message)s', 
                             level=logging.DEBUG)
@@ -184,16 +186,17 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
                 logger.error("database=%s Error='%s'" % (database, e.stderr.decode()))
                 return -1
         # remove files older than keepdays days old
-        now = time.time()
-        for file in glob.glob(os.path.join(backupdir, database + '*')):
-            fullPath = os.path.join(backupdir, file)
-            if os.path.isfile(fullPath):
-                mtime = os.path.getmtime(fullPath)
-                if now - mtime > keepdays * 86400:
-                    # remove old files
-                    if DEBUG:
-                        print("Deleting %s" % fullPath)
-                    os.remove(fullPath)
+        if keepdays >= 0:
+            now = time.time()
+            for file in glob.glob(os.path.join(backupdir, database + '*')):
+                fullPath = os.path.join(backupdir, file)
+                if os.path.isfile(fullPath):
+                    mtime = os.path.getmtime(fullPath)
+                    if now - mtime > keepdays * 86400:
+                        # remove old files
+                        if DEBUG:
+                            print("Deleting %s" % fullPath)
+                        os.remove(fullPath)
     
     return 0
 
