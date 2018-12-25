@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 from datetime import datetime
-from subprocess import run, PIPE, CalledProcessError
+from subprocess import run, PIPE, TimeoutExpired, Popen
 
 __all__ = []
 __version__ = 0.1
@@ -180,10 +180,19 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
             print("using command: %s" % dumpcommand)
         with open(backupfile, "wb", 0) as out:
             try:
-                run(["mysqldump", "-u", user, "-p", database], input=password.encode(), stderr=PIPE, stdout=out, check=True)
-                logger.info("backed up " + database)
-            except CalledProcessError as e:
-                logger.error("database=%s Error='%s'" % (database, e.stderr.decode()))
+                p = Popen(["mysqldump", "-u", user, "-p", database], stdin=PIPE, stdout=out, stderr=PIPE)
+                try:
+                    errs = p.communicate(input=password.encode(), timeout=30)[1]
+                    if errs != 'Enter password: '.encode():
+                        logger.error("database=%s Error='%s'" % (database, errs.decode()))
+                    else:
+                        logger.info("backed up " + database)
+                except TimeoutExpired:
+                    p.kill()
+                    errs = p.communicate()[1]
+                    logger.error("database=%s timedout when backing up")
+            except OSError as e:
+                logger.error("database=%s Error='%s'" % (database, e.strerror))
                 return -1
         # remove files older than keepdays days old
         if keepdays >= 0:
