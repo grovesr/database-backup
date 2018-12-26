@@ -18,6 +18,7 @@ import os
 import json
 import logging
 import glob
+import time
 from logging.handlers import SMTPHandler
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
 ADMIN = "robgroves0@gmail.com"
+KEEPZIPDAYS = 1
 
 class ImproperlyConfigured(Exception):
     '''Generic exception to raise and log configuration errors.'''
@@ -172,15 +174,20 @@ def zip_dirs(directories=None, backupdir="", secretfile='', verbose=False):
                 print("Taring and gzipping %s to %s" % (directory, backupfile))
                 print("using command: %s" % tarcommand)
             try:
-                p=run(["rm", "-f"]+ glob.glob(os.path.join(backupdir, backuproot + '*')), stderr=PIPE, check=True)
-            except CalledProcessError as e:
-                logger.error("unable to remove file %s\* Error='%s'" % (backuproot, e.stderr.decode()))
-                return -1
-            try:
                 run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
             except CalledProcessError as e:
                 logger.error("directory=%s Error='%s'" % (directory, e.stderr.decode()))
                 return -1
+            now = time.time()
+            for file in glob.glob(os.path.join(backupdir, backuproot + '*')):
+                fullPath = os.path.join(backupdir, file)
+                if os.path.isfile(fullPath):
+                    mtime = os.path.getmtime(fullPath)
+                    if now - mtime > KEEPZIPDAYS * 86400:
+                        # remove old files
+                        if DEBUG:
+                            print("Deleting %s" % fullPath)
+                        os.remove(fullPath)
             logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
             # remove files older than keepdays days old
         else:
