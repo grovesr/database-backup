@@ -32,7 +32,7 @@ __version__ = 0.1
 __date__ = '2018-11-06'
 __updated__ = '2018-11-06'
 
-DEBUG = 1
+DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
 ADMIN = "robgroves0@gmail.com"
@@ -181,7 +181,6 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
         with open(backupfile, "wb", 0) as out:
             try:
                 run(["mysqldump", "-u", user, "-p"+password, database], stderr=PIPE, stdout=out, check=True)
-                logger.info("backed up " + database)
             except CalledProcessError as e:
                 logger.error("database=%s Error='%s'" % (database, e.stderr.decode()))
                 return -1
