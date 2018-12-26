@@ -185,6 +185,8 @@ def zip_dirs(directories=None, backupdir="", secretfile='', verbose=False):
             # remove files older than keepdays days old
         else:
             logger.info("directory %s doesn't exist. Ignoring" % directory)
+            if verbose:
+                print("directory %s doesn't exist. Ignoring" % directory)
     return 0
 
 if __name__ == "__main__":
