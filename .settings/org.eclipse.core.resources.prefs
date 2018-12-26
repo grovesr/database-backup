@@ -1,2 +1,3 @@
 eclipse.preferences.version=1
 encoding//database_backup/mysql_backup.py=utf-8
+encoding//database_backup/zip_dirs.py=utf-8

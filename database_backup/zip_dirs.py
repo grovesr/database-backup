@@ -1,7 +1,7 @@
 #!/usr/local/bin/python2.7
 # encoding: utf-8
 '''
-database_backup.mysql_backup -- is a CLI program that is used to backup MYSQL databases
+database_backup.zip_dirs -- is a CLI program used to automate zipping of directories
 
 @author:     Rob Groves
 
@@ -17,7 +17,6 @@ import sys
 import os
 import json
 import logging
-import time
 import glob
 from logging.handlers import SMTPHandler
 logger = logging.getLogger(__name__)
@@ -29,8 +28,8 @@ from subprocess import run, PIPE, CalledProcessError
 
 __all__ = []
 __version__ = 0.1
-__date__ = '2018-11-06'
-__updated__ = '2018-11-06'
+__date__ = '2018-12-26'
+__updated__ = '2018-12-26'
 
 DEBUG = 0
 TESTRUN = 0
@@ -87,18 +86,16 @@ USAGE
     try:
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
-        parser.add_argument("-b", "--backupdir", dest="backupdir", help="place backup files in BACKUPDIR [default: %(default)s]", default = ".")
-        parser.add_argument("-k", "--keepdays", dest="keepdays", help="if other backup files exist, keep the last KEEPDAYS worth [default: %(default)s which means keep all]", default="-1", type=int)
+        parser.add_argument("-b", "--backupdir", dest="backupdir", help="place tar'd and zipped directories in BACKUPDIR [default: %(default)s]", default = ".")
         parser.add_argument("-s", "--secretfile", dest="secretfile", help="use this secrets file to set database users and passwords [default: %(default)s]", default="./.database_secret.json")
         parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="run in verbose mode [default: %(default)s]", default=False)
-        parser.add_argument(dest="databases", help="space separated list of databases to backup", nargs='+')
+        parser.add_argument(dest="directories", help="space separated list of directories to zip", nargs='+')
 
         # Process arguments
         args = parser.parse_args()
 
-        databases = args.databases
+        directories = args.directories
         backupdir = args.backupdir
-        keepdays = args.keepdays
         secretfile = args.secretfile
         verbose = args.verbose
         if not os.path.isdir(backupdir):
@@ -107,18 +104,12 @@ USAGE
                             format='%(levelname)s:%(asctime)s %(message)s', 
                             level=logging.DEBUG)
         if DEBUG:
-            for database in databases:
-                print("database to backup: %s" % database)
+            for directory in directories:
+                print("directory to backup: %s" % directory)
             print("backup dir = %s" % backupdir)
-            if keepdays >=0:
-                print("number of days worth of backups to keep = %d" % keepdays)
-            else:
-                print("number of days worth of backups to keep = ALL")
-            print("secret file = %s" % secretfile)
-        
-        return mysql_backup(databases=databases, backupdir=backupdir, 
-                            keepdays=keepdays, secretfile=secretfile,
-                            verbose=verbose)
+
+        return zip_dirs(directories=directories, backupdir=backupdir, 
+                            secretfile=secretfile, verbose=verbose)
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
         return 0
@@ -132,7 +123,7 @@ USAGE
     
 
     
-def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbose=False):
+def zip_dirs(directories=None, backupdir="", secretfile='', verbose=False):
     try:
         with open(secretfile) as f:
             SECRETS=json.loads(f.read())
@@ -170,39 +161,30 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
         logger.addHandler(smtpHandler)
     except ImproperlyConfigured:
         pass
-    for database in databases:
-        backupfile = "%s/%s.%s.sql" %(backupdir, database, datetime.now().isoformat())
-        user = get_secret(database.upper() + "_DB_USER")
-        password = get_secret(database.upper() + "_DB_PASS")
-        if verbose:
-            dumpcommand = "mysqldump -u %s -p %s" % (user, database)
-            print("Backing up and gzipping %s database to %s.gz" % (database, backupfile))
-            print("using command: %s" % dumpcommand)
-        with open(backupfile, "wb", 0) as out:
+    for directory in directories:
+        if os.path.exists(directory):
+            backuproot =  directory.replace(os.path.sep,'_')
+            backupfile = "%s%s%s.%s.gz" %(backupdir,os.path.sep, backuproot, datetime.now().isoformat())
+            if verbose:
+                tarcommand = "tar -czf %s %s" % (backupfile, directory)
+                print("Deleting files with this root name %s" % backuproot)
+                print("using command: rm %s*" % backuproot)
+                print("Taring and gzipping %s to %s" % (directory, backupfile))
+                print("using command: %s" % tarcommand)
             try:
-                run(["mysqldump", "-u", user, "-p"+password, database], stderr=PIPE, stdout=out, check=True)
+                p=run(["rm", "-f"]+ glob.glob(os.path.join(backupdir, backuproot + '*')), stderr=PIPE, check=True)
             except CalledProcessError as e:
-                logger.error("database=%s Error='%s'" % (database, e.stderr.decode()))
+                logger.error("unable to remove file %s\* Error='%s'" % (backuproot, e.stderr.decode()))
                 return -1
-        try:
-            run(["gzip", backupfile], stderr=PIPE, check=True)
-        except CalledProcessError as e:
-            logger.error("unable to gzip file=%s Error='%s'" % (backupfile, e.stderr.decode()))
-            return -1  
-        logger.info("backed up and gzipped %s file size=%s" % (database, os.path.getsize(backupfile+".gz")))
-        # remove files older than keepdays days old
-        if keepdays >= 0:
-            now = time.time()
-            for file in glob.glob(os.path.join(backupdir, database + '*')):
-                fullPath = os.path.join(backupdir, file)
-                if os.path.isfile(fullPath):
-                    mtime = os.path.getmtime(fullPath)
-                    if now - mtime > keepdays * 86400:
-                        # remove old files
-                        if DEBUG:
-                            print("Deleting %s" % fullPath)
-                        os.remove(fullPath)
-    
+            try:
+                run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
+            except CalledProcessError as e:
+                logger.error("directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                return -1
+            logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
+            # remove files older than keepdays days old
+        else:
+            logger.info("directory %s doesn't exist. Ignoring" % directory)
     return 0
 
 if __name__ == "__main__":
@@ -212,7 +194,7 @@ if __name__ == "__main__":
     if PROFILE:
         import cProfile
         import pstats
-        profile_filename = 'database_backup.mysql_backup_profile.txt'
+        profile_filename = 'database_backup.zip_dirs_profile.txt'
         cProfile.run('main()', profile_filename)
         statsfile = open("profile_stats.txt", "wb")
         p = pstats.Stats(profile_filename, stream=statsfile)
