@@ -36,7 +36,6 @@ DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
 ADMIN = "robgroves0@gmail.com"
-KEEPZIPDAYS = 1
 
 class ImproperlyConfigured(Exception):
     '''Generic exception to raise and log configuration errors.'''
@@ -89,6 +88,7 @@ USAGE
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument("-b", "--backupdir", dest="backupdir", help="place tar'd and zipped directories in BACKUPDIR [default: %(default)s]", default = ".")
+        parser.add_argument("-k", "--keepdays", dest="keepdays", help="if other backup files exist, keep the last KEEPDAYS worth [default: %(default)s which means keep all]", default="-1", type=int)
         parser.add_argument("-s", "--secretfile", dest="secretfile", help="use this secrets file to set database users and passwords [default: %(default)s]", default="./.database_secret.json")
         parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="run in verbose mode [default: %(default)s]", default=False)
         parser.add_argument(dest="directories", help="space separated list of directories to zip", nargs='+')
@@ -98,6 +98,7 @@ USAGE
 
         directories = args.directories
         backupdir = args.backupdir
+        keepdays = args.keepdays
         secretfile = args.secretfile
         verbose = args.verbose
         if not os.path.isdir(backupdir):
@@ -110,7 +111,7 @@ USAGE
                 print("directory to backup: %s" % directory)
             print("backup dir = %s" % backupdir)
 
-        return zip_dirs(directories=directories, backupdir=backupdir, 
+        return zip_dirs(directories=directories, backupdir=backupdir, keepdays=keepdays,
                             secretfile=secretfile, verbose=verbose)
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
@@ -125,7 +126,7 @@ USAGE
     
 
     
-def zip_dirs(directories=None, backupdir="", secretfile='', verbose=False):
+def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose=False):
     try:
         with open(secretfile) as f:
             SECRETS=json.loads(f.read())
@@ -176,18 +177,33 @@ def zip_dirs(directories=None, backupdir="", secretfile='', verbose=False):
             try:
                 run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
             except CalledProcessError as e:
+                if verbose:
+                    print("directory=%s Error='%s'" % (directory, e.stderr.decode()))
                 logger.error("directory=%s Error='%s'" % (directory, e.stderr.decode()))
-                return -1
-            now = time.time()
-            for file in glob.glob(os.path.join(backupdir, backuproot + '*')):
-                fullPath = os.path.join(backupdir, file)
-                if os.path.isfile(fullPath):
-                    mtime = os.path.getmtime(fullPath)
-                    if now - mtime >= KEEPZIPDAYS * 86400:
-                        # remove old files
-                        if DEBUG:
-                            print("Deleting %s" % fullPath)
-                        os.remove(fullPath)
+                continue
+            if keepdays >= 0:
+                now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
+                for file in glob.glob(os.path.join(backupdir, backuproot + '*')):
+                    fullPath = os.path.join(backupdir, file)
+                    if os.path.isfile(fullPath):
+                        mtime = os.path.getmtime(fullPath)
+                        if now - mtime >= keepdays * 86400:
+                            # remove old files
+                            if DEBUG:
+                                print("Deleting %s" % fullPath)
+                            try:
+                                os.remove(fullPath)
+                            except OSError as e:
+                                if verbose:
+                                    print("directory=%, Unable to remove file %s" % (directory, backupfile))
+                                logger.error("directorye=%, Unable to remove file %s" % (directory, backupfile))
+                                continue
+            try:
+                os.chmod(backupfile, 0o600, follow_symlinks=True)
+            except OSError as e:
+                if verbose:
+                    print("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))
+                logger.error("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))  
             logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
             # remove files older than keepdays days old
         else:
