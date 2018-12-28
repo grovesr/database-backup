@@ -196,19 +196,18 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
                 print("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
             logger.error("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
         logger.info("backed up and gzipped %s file size=%s" % (database, os.path.getsize(backupfile+".gz")))
-    # remove files older than keepdays days old
-    if keepdays >= 0:
-        now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
-        for file in glob.glob(os.path.join(backupdir, database + '*')):
-            fullPath = os.path.join(backupdir, file)
-            if os.path.isfile(fullPath):
-                mtime = os.path.getmtime(fullPath)
-                if now - mtime >= keepdays * 86400:
-                    # remove old files
-                    if DEBUG:
-                        print("Deleting %s" % fullPath)
-                    os.remove(fullPath)
-    
+        # remove files older than keepdays days old
+        if keepdays >= 0:
+            now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
+            for file in glob.glob(os.path.join(backupdir, database + '*')):
+                fullPath = os.path.join(backupdir, file)
+                if os.path.isfile(fullPath):
+                    mtime = os.path.getmtime(fullPath)
+                    if now - mtime >= keepdays * 86400:
+                        # remove old files
+                        if DEBUG:
+                            print("Deleting %s" % fullPath)
+                        os.remove(fullPath)
     return 0
 
 if __name__ == "__main__":
