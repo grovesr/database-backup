@@ -197,7 +197,7 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
                 fullPath = os.path.join(backupdir, file)
                 if os.path.isfile(fullPath):
                     mtime = os.path.getmtime(fullPath)
-                    if now - mtime > keepdays * 86400:
+                    if now - mtime >= keepdays * 86400:
                         # remove old files
                         if DEBUG:
                             print("Deleting %s" % fullPath)

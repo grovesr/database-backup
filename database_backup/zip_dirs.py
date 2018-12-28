@@ -183,7 +183,7 @@ def zip_dirs(directories=None, backupdir="", secretfile='', verbose=False):
                 fullPath = os.path.join(backupdir, file)
                 if os.path.isfile(fullPath):
                     mtime = os.path.getmtime(fullPath)
-                    if now - mtime > KEEPZIPDAYS * 86400:
+                    if now - mtime >= KEEPZIPDAYS * 86400:
                         # remove old files
                         if DEBUG:
                             print("Deleting %s" % fullPath)
