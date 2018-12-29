@@ -1,4 +1,4 @@
-#!/usr/local/bin/python2.7
+#!/usr/bin/python3
 # encoding: utf-8
 '''
 database_backup.zip_dirs -- is a CLI program used to automate zipping of directories
@@ -35,7 +35,6 @@ __updated__ = '2018-12-26'
 DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
-ADMIN = "robgroves0@gmail.com"
 
 class ImproperlyConfigured(Exception):
     '''Generic exception to raise and log configuration errors.'''
@@ -90,6 +89,8 @@ USAGE
         parser.add_argument("-b", "--backupdir", dest="backupdir", help="place tar'd and zipped directories in BACKUPDIR [default: %(default)s]", default = ".")
         parser.add_argument("-k", "--keepdays", dest="keepdays", help="if other backup files exist, keep the last KEEPDAYS worth [default: %(default)s which means keep all]", default="-1", type=int)
         parser.add_argument("-s", "--secretfile", dest="secretfile", help="use this secrets file to set database users and passwords [default: %(default)s]", default="./.database_secret.json")
+        parser.add_argument("-e", "--email", dest="adminemail", help="email address for log error updates [default: None]", default="")
+        parser.add_argument("-t", "--testlog", dest="testlog", action="store_true", help="test log end email capabilities (do nothing else) [default: %(default)s]", default=False)
         parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="run in verbose mode [default: %(default)s]", default=False)
         parser.add_argument(dest="directories", help="space separated list of directories to zip", nargs='+')
 
@@ -101,6 +102,8 @@ USAGE
         keepdays = args.keepdays
         secretfile = args.secretfile
         verbose = args.verbose
+        testlog = args.testlog
+        adminemail = args.adminemail
         if not os.path.isdir(backupdir):
             os.makedirs(backupdir)
         logging.basicConfig(filename=backupdir+"/backuplog.log", 
@@ -112,7 +115,7 @@ USAGE
             print("backup dir = %s" % backupdir)
 
         return zip_dirs(directories=directories, backupdir=backupdir, keepdays=keepdays,
-                            secretfile=secretfile, verbose=verbose)
+                            secretfile=secretfile, verbose=verbose, testlog=testlog, adminemail=adminemail)
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
         return 0
@@ -126,11 +129,13 @@ USAGE
     
 
     
-def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose=False):
+def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose=False,
+             testlog=False, adminemail=""):
     try:
         with open(secretfile) as f:
             SECRETS=json.loads(f.read())
     except FileNotFoundError as e:
+        logger.error("Secretfile %s not found" % secretfile)
         sys.stderr.write(e.strerror + ":\n")
         sys.stderr.write(secretfile + "\n")
         return -1
@@ -151,65 +156,72 @@ def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose
         emailUseTLS = get_secret("EMAIL_USE_TLS")
         emailPassword = get_secret("EMAIL_PASS")
         emailFromUser = get_secret("EMAIL_FROM_USER")
-        isSecure = None
-        if emailUseTLS == "True":
-            isSecure = ()
-        smtpHandler = SMTPHandler((emailHost, emailPort), 
-                                  emailFromUser, 
-                                  ADMIN, 
-                                  emailSubject, 
-                                  credentials=(emailUser, emailPassword,), 
-                                  secure=isSecure)
-        smtpHandler.setLevel(logging.ERROR)
-        logger.addHandler(smtpHandler)
+        if adminemail == "":
+            logger.info("No admin email specified using --email argument, no email logging enabled.")
+        else:
+            isSecure = None
+            if emailUseTLS == "True":
+                isSecure = ()
+            smtpHandler = SMTPHandler((emailHost, emailPort), 
+                                      emailFromUser, 
+                                      adminemail, 
+                                      emailSubject, 
+                                      credentials=(emailUser, emailPassword,), 
+                                      secure=isSecure)
+            smtpHandler.setLevel(logging.ERROR)
+            logger.addHandler(smtpHandler)
     except ImproperlyConfigured:
         pass
-    for directory in directories:
-        if os.path.exists(directory):
-            backuproot =  directory.replace(os.path.sep,'_')
-            backupfile = "%s%s%s.%s.gz" %(backupdir,os.path.sep, backuproot, datetime.now().isoformat())
-            if verbose:
-                tarcommand = "tar -czf %s %s" % (backupfile, directory)
-                print("Deleting files with this root name %s" % backuproot)
-                print("using command: rm %s*" % backuproot)
-                print("Taring and gzipping %s to %s" % (directory, backupfile))
-                print("using command: %s" % tarcommand)
-            try:
-                run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
-            except CalledProcessError as e:
+    if testlog:
+        logger.info("Test of logging capabilities for info messages")
+        logger.error("Test of logging capabilities for error messages")
+    else:
+        for directory in directories:
+            if os.path.exists(directory):
+                backuproot =  directory.replace(os.path.sep,'_')
+                backupfile = "%s%s%s.%s.gz" %(backupdir,os.path.sep, backuproot, datetime.now().isoformat())
                 if verbose:
-                    print("directory=%s Error='%s'" % (directory, e.stderr.decode()))
-                logger.error("directory=%s Error='%s'" % (directory, e.stderr.decode()))
-                continue
-            if keepdays >= 0:
-                now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
-                for file in glob.glob(os.path.join(backupdir, backuproot + '*')):
-                    fullPath = os.path.join(backupdir, file)
-                    if os.path.isfile(fullPath):
-                        mtime = os.path.getmtime(fullPath)
-                        if now - mtime >= keepdays * 86400:
-                            # remove old files
-                            if DEBUG:
-                                print("Deleting %s" % fullPath)
-                            try:
-                                os.remove(fullPath)
-                            except OSError as e:
-                                if verbose:
-                                    print("directory=%, Unable to remove file %s" % (directory, backupfile))
-                                logger.error("directorye=%, Unable to remove file %s" % (directory, backupfile))
-                                continue
-            try:
-                os.chmod(backupfile, 0o600, follow_symlinks=True)
-            except OSError as e:
+                    tarcommand = "tar -czf %s %s" % (backupfile, directory)
+                    print("Deleting files with this root name %s" % backuproot)
+                    print("using command: rm %s*" % backuproot)
+                    print("Taring and gzipping %s to %s" % (directory, backupfile))
+                    print("using command: %s" % tarcommand)
+                try:
+                    run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
+                except CalledProcessError as e:
+                    if verbose:
+                        print("directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                    logger.error("directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                    continue
+                if keepdays >= 0:
+                    now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
+                    for file in glob.glob(os.path.join(backupdir, backuproot + '*')):
+                        fullPath = os.path.join(backupdir, file)
+                        if os.path.isfile(fullPath):
+                            mtime = os.path.getmtime(fullPath)
+                            if now - mtime >= keepdays * 86400:
+                                # remove old files
+                                if DEBUG:
+                                    print("Deleting %s" % fullPath)
+                                try:
+                                    os.remove(fullPath)
+                                except OSError as e:
+                                    if verbose:
+                                        print("directory=%, Unable to remove file %s" % (directory, backupfile))
+                                    logger.error("directorye=%, Unable to remove file %s" % (directory, backupfile))
+                                    continue
+                try:
+                    os.chmod(backupfile, 0o600, follow_symlinks=True)
+                except OSError as e:
+                    if verbose:
+                        print("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))
+                    logger.error("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))  
+                logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
+                # remove files older than keepdays days old
+            else:
+                logger.info("directory %s doesn't exist. Ignoring" % directory)
                 if verbose:
-                    print("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))
-                logger.error("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))  
-            logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
-            # remove files older than keepdays days old
-        else:
-            logger.info("directory %s doesn't exist. Ignoring" % directory)
-            if verbose:
-                print("directory %s doesn't exist. Ignoring" % directory)
+                    print("directory %s doesn't exist. Ignoring" % directory)
     return 0
 
 if __name__ == "__main__":

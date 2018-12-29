@@ -1,4 +1,4 @@
-#!/usr/local/bin/python2.7
+#!/usr/bin/python3
 # encoding: utf-8
 '''
 database_backup.mysql_backup -- is a CLI program that is used to backup MYSQL databases
@@ -91,6 +91,8 @@ USAGE
         parser.add_argument("-k", "--keepdays", dest="keepdays", help="if other backup files exist, keep the last KEEPDAYS worth [default: %(default)s which means keep all]", default="-1", type=int)
         parser.add_argument("-s", "--secretfile", dest="secretfile", help="use this secrets file to set database users and passwords [default: %(default)s]", default="./.database_secret.json")
         parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="run in verbose mode [default: %(default)s]", default=False)
+        parser.add_argument("-e", "--email", dest="adminemail", help="email address for log error updates [default: None]", default="")
+        parser.add_argument("-t", "--testlog", dest="testlog", action="store_true", help="test log end email capabilities (do nothing else) [default: %(default)s]", default=False)
         parser.add_argument(dest="databases", help="space separated list of databases to backup", nargs='+')
 
         # Process arguments
@@ -101,6 +103,8 @@ USAGE
         keepdays = args.keepdays
         secretfile = args.secretfile
         verbose = args.verbose
+        testlog = args.testlog
+        adminemail = args.adminemail
         if not os.path.isdir(backupdir):
             os.makedirs(backupdir)
         logging.basicConfig(filename=backupdir+"/backuplog.log", 
@@ -115,10 +119,10 @@ USAGE
             else:
                 print("number of days worth of backups to keep = ALL")
             print("secret file = %s" % secretfile)
-        
+
         return mysql_backup(databases=databases, backupdir=backupdir, 
                             keepdays=keepdays, secretfile=secretfile,
-                            verbose=verbose)
+                            verbose=verbose, testlog=testlog, adminemail=adminemail)
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
         return 0
@@ -132,11 +136,13 @@ USAGE
     
 
     
-def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbose=False):
+def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbose=False,
+                 testlog=False, adminemail=""):
     try:
         with open(secretfile) as f:
             SECRETS=json.loads(f.read())
     except FileNotFoundError as e:
+        logger.error("Secretfile %s not found" % secretfile)
         sys.stderr.write(e.strerror + ":\n")
         sys.stderr.write(secretfile + "\n")
         return -1
@@ -157,57 +163,64 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
         emailUseTLS = get_secret("EMAIL_USE_TLS")
         emailPassword = get_secret("EMAIL_PASS")
         emailFromUser = get_secret("EMAIL_FROM_USER")
-        isSecure = None
-        if emailUseTLS == "True":
-            isSecure = ()
-        smtpHandler = SMTPHandler((emailHost, emailPort), 
-                                  emailFromUser, 
-                                  ADMIN, 
-                                  emailSubject, 
-                                  credentials=(emailUser, emailPassword,), 
-                                  secure=isSecure)
-        smtpHandler.setLevel(logging.ERROR)
-        logger.addHandler(smtpHandler)
+        if adminemail == "":
+            logger.info("No admin email specified using --email argument, no email logging enabled.")
+        else:
+            isSecure = None
+            if emailUseTLS == "True":
+                isSecure = ()
+            smtpHandler = SMTPHandler((emailHost, emailPort), 
+                                      emailFromUser, 
+                                      adminemail, 
+                                      emailSubject, 
+                                      credentials=(emailUser, emailPassword,), 
+                                      secure=isSecure)
+            smtpHandler.setLevel(logging.ERROR)
+            logger.addHandler(smtpHandler)
     except ImproperlyConfigured:
         pass
-    for database in databases:
-        backupfile = "%s/%s.%s.sql" %(backupdir, database, datetime.now().isoformat())
-        user = get_secret(database.upper() + "_DB_USER")
-        password = get_secret(database.upper() + "_DB_PASS")
-        if verbose:
-            dumpcommand = "mysqldump -u %s -p %s" % (user, database)
-            print("Backing up and gzipping %s database to %s.gz" % (database, backupfile))
-            print("using command: %s" % dumpcommand)
-        with open(backupfile, "wb", 0) as out:
-            try:
-                run(["mysqldump", "-u", user, "-p"+password, database], stderr=PIPE, stdout=out, check=True)
-            except CalledProcessError as e:
-                logger.error("database=%s Error='%s'" % (database, e.stderr.decode()))
-                continue
-        try:
-            run(["gzip", backupfile], stderr=PIPE, check=True)
-        except CalledProcessError as e:
-            logger.error("unable to gzip file=%s Error='%s'" % (backupfile, e.stderr.decode()))
-            continue  
-        try:
-            os.chmod(backupfile+".gz", 0o600, follow_symlinks=True)
-        except OSError as e:
+    if testlog:
+        logger.info("Test of logging capabilities for info messages")
+        logger.error("Test of logging capabilities for error messages")
+    else:
+        for database in databases:
+            backupfile = "%s/%s.%s.sql" %(backupdir, database, datetime.now().isoformat())
+            user = get_secret(database.upper() + "_DB_USER")
+            password = get_secret(database.upper() + "_DB_PASS")
             if verbose:
-                print("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
-            logger.error("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
-        logger.info("backed up and gzipped %s file size=%s" % (database, os.path.getsize(backupfile+".gz")))
-        # remove files older than keepdays days old
-        if keepdays >= 0:
-            now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
-            for file in glob.glob(os.path.join(backupdir, database + '*')):
-                fullPath = os.path.join(backupdir, file)
-                if os.path.isfile(fullPath):
-                    mtime = os.path.getmtime(fullPath)
-                    if now - mtime >= keepdays * 86400:
-                        # remove old files
-                        if DEBUG:
-                            print("Deleting %s" % fullPath)
-                        os.remove(fullPath)
+                dumpcommand = "mysqldump -u %s -p %s" % (user, database)
+                print("Backing up and gzipping %s database to %s.gz" % (database, backupfile))
+                print("using command: %s" % dumpcommand)
+            with open(backupfile, "wb", 0) as out:
+                try:
+                    run(["mysqldump", "-u", user, "-p"+password, database], stderr=PIPE, stdout=out, check=True)
+                except CalledProcessError as e:
+                    logger.error("database=%s Error='%s'" % (database, e.stderr.decode()))
+                    continue
+            try:
+                run(["gzip", backupfile], stderr=PIPE, check=True)
+            except CalledProcessError as e:
+                logger.error("unable to gzip file=%s Error='%s'" % (backupfile, e.stderr.decode()))
+                continue  
+            try:
+                os.chmod(backupfile+".gz", 0o600, follow_symlinks=True)
+            except OSError as e:
+                if verbose:
+                    print("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
+                logger.error("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
+            logger.info("backed up and gzipped %s file size=%s" % (database, os.path.getsize(backupfile+".gz")))
+            # remove files older than keepdays days old
+            if keepdays >= 0:
+                now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
+                for file in glob.glob(os.path.join(backupdir, database + '*')):
+                    fullPath = os.path.join(backupdir, file)
+                    if os.path.isfile(fullPath):
+                        mtime = os.path.getmtime(fullPath)
+                        if now - mtime >= keepdays * 86400:
+                            # remove old files
+                            if DEBUG:
+                                print("Deleting %s" % fullPath)
+                            os.remove(fullPath)
     return 0
 
 if __name__ == "__main__":
