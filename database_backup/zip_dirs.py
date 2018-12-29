@@ -111,8 +111,8 @@ USAGE
                             level=logging.DEBUG)
         if DEBUG:
             for directory in directories:
-                print("directory to backup: %s" % directory)
-            print("backup dir = %s" % backupdir)
+                sys.stdout.write("directory to backup: %s" % directory)
+            sys.stdout.write("backup dir = %s" % backupdir)
 
         return zip_dirs(directories=directories, backupdir=backupdir, keepdays=keepdays,
                             secretfile=secretfile, verbose=verbose, testlog=testlog, adminemail=adminemail)
@@ -182,15 +182,15 @@ def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose
                 backupfile = "%s%s%s.%s.gz" %(backupdir,os.path.sep, backuproot, datetime.now().isoformat())
                 if verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
-                    print("Deleting files with this root name %s" % backuproot)
-                    print("using command: rm %s*" % backuproot)
-                    print("Taring and gzipping %s to %s" % (directory, backupfile))
-                    print("using command: %s" % tarcommand)
+                    sys.stdout.write("Deleting files with this root name %s" % backuproot)
+                    sys.stdout.write("using command: rm %s*" % backuproot)
+                    sys.stdout.write("Taring and gzipping %s to %s" % (directory, backupfile))
+                    sys.stdout.write("using command: %s" % tarcommand)
                 try:
                     run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
                 except CalledProcessError as e:
                     if verbose:
-                        print("directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                        sys.stdout.write("directory=%s Error='%s'" % (directory, e.stderr.decode()))
                     logger.error("directory=%s Error='%s'" % (directory, e.stderr.decode()))
                     continue
                 if keepdays >= 0:
@@ -202,26 +202,26 @@ def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose
                             if now - mtime >= keepdays * 86400:
                                 # remove old files
                                 if DEBUG:
-                                    print("Deleting %s" % fullPath)
+                                    sys.stdout.write("Deleting %s" % fullPath)
                                 try:
                                     os.remove(fullPath)
                                 except OSError as e:
                                     if verbose:
-                                        print("directory=%, Unable to remove file %s" % (directory, backupfile))
+                                        sys.stdout.write("directory=%, Unable to remove file %s" % (directory, backupfile))
                                     logger.error("directorye=%, Unable to remove file %s" % (directory, backupfile))
                                     continue
                 try:
                     os.chmod(backupfile, 0o600, follow_symlinks=True)
                 except OSError as e:
                     if verbose:
-                        print("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))
+                        sys.stdout.write("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))
                     logger.error("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))  
                 logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
                 # remove files older than keepdays days old
             else:
                 logger.info("directory %s doesn't exist. Ignoring" % directory)
                 if verbose:
-                    print("directory %s doesn't exist. Ignoring" % directory)
+                    sys.stdout.write("directory %s doesn't exist. Ignoring" % directory)
     return 0
 
 if __name__ == "__main__":

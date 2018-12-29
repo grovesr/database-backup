@@ -112,13 +112,13 @@ USAGE
                             level=logging.DEBUG)
         if DEBUG:
             for database in databases:
-                print("database to backup: %s" % database)
-            print("backup dir = %s" % backupdir)
+                sys.stdout.write("database to backup: %s" % database)
+            sys.stdout.write("backup dir = %s" % backupdir)
             if keepdays >=0:
-                print("number of days worth of backups to keep = %d" % keepdays)
+                sys.stdout.write("number of days worth of backups to keep = %d" % keepdays)
             else:
-                print("number of days worth of backups to keep = ALL")
-            print("secret file = %s" % secretfile)
+                sys.stdout.write("number of days worth of backups to keep = ALL")
+            sys.stdout.write("secret file = %s" % secretfile)
 
         return mysql_backup(databases=databases, backupdir=backupdir, 
                             keepdays=keepdays, secretfile=secretfile,
@@ -189,8 +189,8 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
             password = get_secret(database.upper() + "_DB_PASS")
             if verbose:
                 dumpcommand = "mysqldump -u %s -p %s" % (user, database)
-                print("Backing up and gzipping %s database to %s.gz" % (database, backupfile))
-                print("using command: %s" % dumpcommand)
+                sys.stdout.write("Backing up and gzipping %s database to %s.gz" % (database, backupfile))
+                sys.stdout.write("using command: %s" % dumpcommand)
             with open(backupfile, "wb", 0) as out:
                 try:
                     run(["mysqldump", "-u", user, "-p"+password, database], stderr=PIPE, stdout=out, check=True)
@@ -206,7 +206,7 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
                 os.chmod(backupfile+".gz", 0o600, follow_symlinks=True)
             except OSError as e:
                 if verbose:
-                    print("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
+                    sys.stdout.write("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
                 logger.error("database=%, Unable to chmod 700 on file %s" % (database, backupfile))
             logger.info("backed up and gzipped %s file size=%s" % (database, os.path.getsize(backupfile+".gz")))
             # remove files older than keepdays days old
@@ -219,7 +219,7 @@ def mysql_backup(databases=None, backupdir="", keepdays=-1, secretfile='', verbo
                         if now - mtime >= keepdays * 86400:
                             # remove old files
                             if DEBUG:
-                                print("Deleting %s" % fullPath)
+                                sys.stdout.write("Deleting %s" % fullPath)
                             os.remove(fullPath)
     return 0
 
