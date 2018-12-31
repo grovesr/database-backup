@@ -14,4 +14,11 @@
 	<natures>
 		<nature>org.python.pydev.pythonNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>google_drive_utilities</name>
+			<type>2</type>
+			<location>/home/grovesr/git/google-drive-utilities/google_drive_utilities</location>
+		</link>
+	</linkedResources>
 </projectDescription>

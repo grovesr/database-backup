@@ -12,11 +12,9 @@ database_backup.drive_backup -- is a CLI program used to automate backing up gzi
 @contact:    robgroves0@gmail.com
 @deffield    updated: Updated
 '''
+
 from __future__ import print_function
-from googleapiclient import discovery
-from googleapiclient.http import MediaFileUpload
-from googleapiclient.errors import HttpError
-from oauth2client.service_account import ServiceAccountCredentials
+from google_drive import GoogleDrive
 
 import sys
 import os
@@ -101,20 +99,12 @@ USAGE
 
         # Process arguments
         args = parser.parse_args()
-        logfile = args.logfile
-        directories = args.directories
-        secretfile = args.secretfile
-        keyfile = args.keyfile
-        verbose = args.verbose
-        testlog = args.testlog
-        adminemail = args.adminemail
-        logging.basicConfig(filename=logfile, 
+        logging.basicConfig(filename=args.logfile, 
                             format='%(levelname)s:%(asctime)s %(message)s', 
                             level=logging.INFO)
         logging.getLogger('googleapiclient').setLevel(logging.ERROR)
         logging.getLogger('oauth2client').setLevel(logging.ERROR)
-        return drive_backup(directories=directories, secretfile=secretfile, keyfile=keyfile, verbose=verbose, 
-                            testlog=testlog, adminemail=adminemail)
+        return drive_backup(args)
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
         return 0
@@ -126,167 +116,23 @@ USAGE
         sys.stderr.write(indent + "  for help use --help")
         return 2
 
-def create_new_folder(service,  name, verbose=False):
-    """Will create a new folder in the root of the supplied GDrive, 
-    Retruns:
-        The folder resource
-    """
-    backupdirs = list_files_in_drive(service, namequery="= '%s'" % name, 
-                                     mimetypequery="= 'application/vnd.google-apps.folder'")
-    if len(backupdirs) == 0:
-        folder_metadata = {
-        'name' : name,
-        'mimeType' : 'application/vnd.google-apps.folder'
-        }
-        try:
-            service.files().create(body=folder_metadata, fields='id, name').execute()
-        except HttpError as e:
-            if verbose:
-                sys.stdout.write("unable to create folder %s: %s\n" % (name, str(e)))
-            return None
-        backupdirs = list_files_in_drive(service, namequery="= '%s'" % name, 
-                                         mimetypequery="= 'application/vnd.google-apps.folder'")
-        folder = backupdirs[0]
-        if verbose:
-            sys.stdout.write("Folder Creation Complete\n")
-            sys.stdout.write("Folder Name: %s\n" % folder.get('name'))
-            sys.stdout.write("Folder ID: %s \n" % folder.get('id'))
-        logger.info("Folder %s creation complete, ID=%s" % (folder.get('name'), folder.get('id')))
-    else:
-        folder = backupdirs[0]
-        if verbose:
-            sys.stdout.write("Folder already exists\n")
-            sys.stdout.write("Folder Name: %s\n" % folder.get('name'))
-            sys.stdout.write("Folder ID: %s \n" % folder.get('id'))
-    return folder
-
-def delete_file(service,  fileid, verbose=False):
-    """Will delete the given fileid on the supplied GDrive, 
-    Retruns:
-        True if sucessful
-    """
+def drive_backup(args):
+    settings = {}
+    settings["logfile"] = args.logfile
+    settings["secretfile"] = args.secretfile
+    settings["keyfile"] = args.keyfile
+    settings["email"] = args.adminemail
+    settings["testlog"] = args.testlog
+    settings["verbose"] = args.verbose
+    settings["scopes"] = SCOPES
+    directories = args.directories
     try:
-        file = service.files().get(fileId=fileid, fields='name').execute()
-        service.files().delete(fileId=fileid).execute()
-        if verbose:
-            sys.stdout.write("deleted file %s fileid=%s\n" % (file.get('name'), fileid))
-        logger.info("deleted file %s fileid=%s" % (file.get('name'), fileid))
-        result = True
-    except HttpError as e:
-        if verbose:
-            sys.stdout.write("unable to delete file %s fileid=%s: %s\n" % (file.get('name'), fileid, str(e)))
-            logger.error("unable to delete file %s fileid=%s: %s" % (file.get('name'), fileid, str(e)))
-        result = False
-    return result
-
-def get_service(keyfile, scopes, verbose=False):
-    """Get a service that communicates to a Google API.
-    Returns:
-      A service that is connected to the specified API.
-    """
-    if verbose:
-        sys.stdout.write("Acquiring credentials...\n")
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(filename=keyfile, scopes=scopes)
-
-    # Build the service object for use with any API
-    if verbose:
-        sys.stdout.write("Acquiring service...\n")
-    service = discovery.build(serviceName="drive", version="v3", credentials=credentials,
-                              cache_discovery=False)
-    
-    if verbose:
-        sys.stdout.write("Service acquired!\n")
-    return service
-
-def upload_file_to_folder(service, folderID, fileName, verbose=False):
-    """Uploads the file to the specified folder id on the said Google Drive
-    Returns:
-            file resource
-    """
-    file_metadata = None
-    if folderID is None:
-        file_metadata = {
-            'name' : fileName
-        }
-    else:
-        file_metadata = {
-              'name' : fileName,
-              'parents': [ folderID ]
-        }
-
-    media = MediaFileUpload(fileName, resumable=True)
-    try:
-        folder = service.files().get(fileId=folderID).execute()
-        file = service.files().create(body=file_metadata, media_body=media, fields='name,id,size,parents').execute()
-        logger.info("Uploaded file %s ID=%s to: %s" % (file.get('name'), file.get('id'), folder.get('name')))
-        if verbose:
-            sys.stdout.write("Uploaded file %s ID=%s to: %s\n" % (file.get('name'), file.get('id'), folder.get('name')))
-            sys.stdout.write("File Size: %s \n" % file.get('size'))
-            sys.stdout.write("parents ID: %s\n" % str(file.get('parents')))
-    except HttpError as e:
-        if verbose:
-            sys.stdout.write("unable to upload file  %s: %s\n" % (fileName, str(e)))
-        logger.error ("Unable to upload file %s to: %s\n" % (fileName, folderID))
-        return None
-
-    return file
-
-def list_files_in_drive(service, datequery='', namequery="", mimetypequery="", parentid='', verbose=False):
-    """Queries Google Drive for all files satisfying name contains string
-    Returns:
-            list of file resources
-    """
-    q=''
-    if len(namequery) > 0:
-        q += "name %s" % namequery
-    if len(mimetypequery) > 0:
-        if q:
-            q += " and "
-        q += "mimeType %s" % mimetypequery
-    if len(parentid) > 0:
-        if q:
-            q += " and "
-        q += "'%s' in parents" % parentid
-    if len(datequery) > 0:
-        if q:
-            q += " and "
-        q += "modifiedTime %s" % datequery
-    try:
-        if len(q) > 0:
-            files= service.files().list(q=q).execute()
-        else:
-            files = service.files().list().execute()
-    except HttpError as e:
-        if verbose:
-            sys.stdout.write("unable to list files  %s: %s\n" % (q, str(e)))
-        logger.error("unable to list files  %s: %s\n" % (q, str(e)))
-        return []
-    if verbose:
-        for file in files.get('files'):
-            thisFile = service.files().get(fileId=file.get('id'), fields='id,parents,name,size,modifiedTime').execute()
-            sys.stdout.write("File ID: %s \n" % thisFile.get('id'))
-            sys.stdout.write("File Name: %s \n" % thisFile.get('name'))
-            sys.stdout.write("File size: %s\n" % thisFile.get('size'))
-            sys.stdout.write("Modified: %s\n" % thisFile.get('modifiedTime'))
-            sys.stdout.write("parents ID: %s\n" % str(thisFile.get('parents')))
-    return files.get('files')
-
-def upload_file_to_root(service, fileName, verbose=False):
-    """Uploads the file to the root directory on the said Google Drive
-    Returns:
-            fileID, A string of the ID from the uploaded file
-    """
-    return upload_file_to_folder(service=service, folderID=None, fileName=fileName, verbose=verbose)
-
-def drive_backup(directories=None, secretfile='', keyfile='', verbose=False,
-             testlog=False, adminemail=""):
-    try:
-        with open(secretfile) as f:
+        with open(settings.get("secretfile")) as f:
             SECRETS=json.loads(f.read())
     except FileNotFoundError as e:
-        logger.error("Secretfile %s not found" % secretfile)
+        logger.error("Secretfile %s not found" % args.secretfile)
         sys.stderr.write(e.strerror + ":\n")
-        sys.stderr.write(secretfile + "\n")
+        sys.stderr.write(settings.get("secretfile") + "\n")
         return -1
     def get_secret(setting, secrets=SECRETS):
         """
@@ -306,7 +152,7 @@ def drive_backup(directories=None, secretfile='', keyfile='', verbose=False,
         emailUseTLS = get_secret("EMAIL_USE_TLS")
         emailPassword = get_secret("EMAIL_PASS")
         emailFromUser = get_secret("EMAIL_FROM_USER")
-        if adminemail == "":
+        if args.adminemail == "":
             logger.info("No admin email specified using --email argument, no email logging enabled.")
         else:
             isSecure = None
@@ -314,7 +160,7 @@ def drive_backup(directories=None, secretfile='', keyfile='', verbose=False,
                 isSecure = ()
             smtpHandler = SMTPHandler((emailHost, emailPort), 
                                       emailFromUser, 
-                                      adminemail, 
+                                      args.adminemail, 
                                       emailSubject, 
                                       credentials=(emailUser, emailPassword,), 
                                       secure=isSecure)
@@ -322,48 +168,48 @@ def drive_backup(directories=None, secretfile='', keyfile='', verbose=False,
             logger.addHandler(smtpHandler)
     except ImproperlyConfigured:
         pass
-    if testlog:
+    if args.testlog:
         logger.info("Test of logging capabilities for info messages")
         logger.error("Test of logging capabilities for error messages")
     else:
-        service = get_service(keyfile, SCOPES, verbose=verbose)
-        backupFolder = create_new_folder(service, 'Backup', verbose=verbose)
+        gdrive = GoogleDrive(settings=settings)
+        backupFolder = gdrive.create_new_folder('Backup')
         successful = []
         for directory in directories:
             if os.path.exists(directory):
                 backuproot =  directory.replace(os.path.sep,'_')
                 utcnow = datetime.utcnow().isoformat()
                 backupfile = "%s%s%s.%s.gz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat())
-                if verbose:
+                if gdrive.verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
                     sys.stdout.write("Taring and gzipping %s to %s\n" % (directory, backupfile))
                     sys.stdout.write("using command: %s\n" % tarcommand)
                 try:
                     run(["tar", "-czf", backupfile, directory], stderr=PIPE, check=True)
                 except CalledProcessError as e:
-                    if verbose:
+                    if gdrive.verbose:
                         sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
                     logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
                     continue
-                if upload_file_to_folder(service, backupFolder.get('id'), backupfile, verbose) is not None:
+                if gdrive.upload_file_to_folder(backupFolder.get('id'), backupfile) is not None:
                     successful.append(directory)
                 for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
                     fileToRemove = os.path.join('/tmp', rmfile)
                     try:
                         run(["rm", fileToRemove], stderr=PIPE, check=True)
-                        if verbose:
+                        if gdrive.verbose:
                             sys.stdout.write("removing %s from filesystem\n" % fileToRemove)
                     except CalledProcessError as e:
-                        if verbose:
+                        if gdrive.verbose:
                             sys.stdout.write("unable to remove %s, Error='%s'\n" % (fileToRemove, e.stderr.decode()))
                             logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                         continue
-                oldFiles = list_files_in_drive(service, verbose=False, datequery="< '%sZ'" % utcnow, namequery="contains '%s%s%s'" % ('/tmp', os.path.sep, backuproot))
+                oldFiles = gdrive.list_files_in_drive(datequery="< '%sZ'" % utcnow, namequery="contains '%s%s%s'" % ('/tmp', os.path.sep, backuproot))
                 for file in oldFiles:
-                    delete_file(service, fileid=file.get('id'), verbose=verbose)
+                    gdrive.delete_file(fileid=file.get('id'))
             else:
                 logger.info("directory %s doesn't exist. Ignoring" % directory)
-                if verbose:
+                if gdrive.verbose:
                     sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
         smtpHandler.setLevel(logging.INFO)
         logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
