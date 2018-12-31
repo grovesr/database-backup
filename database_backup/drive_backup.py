@@ -328,6 +328,7 @@ def drive_backup(directories=None, secretfile='', keyfile='', verbose=False,
     else:
         service = get_service(keyfile, SCOPES, verbose=verbose)
         backupFolder = create_new_folder(service, 'Backup', verbose=verbose)
+        successful = []
         for directory in directories:
             if os.path.exists(directory):
                 backuproot =  directory.replace(os.path.sep,'_')
@@ -344,7 +345,8 @@ def drive_backup(directories=None, secretfile='', keyfile='', verbose=False,
                         sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
                     logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
                     continue
-                upload_file_to_folder(service, backupFolder.get('id'), backupfile, verbose)
+                if upload_file_to_folder(service, backupFolder.get('id'), backupfile, verbose) is not None:
+                    successful.append(directory)
                 for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
                     fileToRemove = os.path.join('/tmp', rmfile)
                     try:
@@ -364,7 +366,7 @@ def drive_backup(directories=None, secretfile='', keyfile='', verbose=False,
                 if verbose:
                     sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
         smtpHandler.setLevel(logging.INFO)
-        logger.info("Uploaded the following directories to Google Drive: %s" % str(directories))
+        logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
     return 0
 
 if __name__ == "__main__":
