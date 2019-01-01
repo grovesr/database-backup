@@ -201,6 +201,7 @@ def drive_backup(args):
         for directory in directories:
             if os.path.exists(directory):
                 backuproot =  directory.replace(os.path.sep,'_')
+                utcnow = time.time.utcnow()
                 backupfile = "%s%s%s.%s.gz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat())
                 if gdrive.verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
@@ -233,7 +234,7 @@ def drive_backup(args):
                         else:
                             logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                         continue
-                oldFiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s%s%s'" % ('/tmp', os.path.sep, backuproot))
+                oldFiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s%s%s'" % (utcnow, '/tmp', os.path.sep, backuproot))
                 for file in oldFiles:
                     gdrive.delete_file(fileid=file.get('id'))
             else:
