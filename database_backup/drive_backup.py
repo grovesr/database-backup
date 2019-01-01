@@ -201,7 +201,7 @@ def drive_backup(args):
         for directory in directories:
             if os.path.exists(directory):
                 backuproot =  directory.replace(os.path.sep,'_')
-                utcnow = time.time.utcnow()
+                utcnow = datetime.utcnow().isoformat()
                 backupfile = "%s%s%s.%s.gz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat())
                 if gdrive.verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
