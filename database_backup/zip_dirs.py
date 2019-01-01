@@ -189,7 +189,7 @@ def zip_dirs(args):
         for directory in args.directories:
             if os.path.exists(directory):
                 backuproot =  directory.replace(os.path.sep,'_')
-                backupfile = "%s%s%s.%s.gz" %(args.backupdir,os.path.sep, backuproot, datetime.now().isoformat())
+                backupfile = "%s%s%s.%s.tgz" %(args.backupdir,os.path.sep, backuproot, datetime.now().isoformat().replace(':', '.'))
                 if args.verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
                     sys.stdout.write("Deleting files with this root name %s\n" % backuproot)
