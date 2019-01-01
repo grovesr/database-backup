@@ -23,7 +23,7 @@ import logging
 import glob
 from logging.handlers import SMTPHandler
 logger = logging.getLogger(__name__)
-
+from time import time
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 from datetime import datetime
@@ -82,6 +82,26 @@ def main(argv=None): # IGNORE:C0111
 
   Distributed on an "AS IS" basis without warranties
   or conditions of any kind, either express or implied.
+  
+Requires a json-formatted 'secretfile' containing various database and email information.
+Below is a generic example of the contents of '.database_secret.json':
+
+{
+    "MYSQLDB1NAME_DB_USER":"db1_username",
+    "MYSQLDB1NAME_DB_PASS":"db1_user_password",
+    "MYSQLDB2NAME_DB_USER":"db2_username",
+    "MYSQLDB2NAME_DB_PASS":"db2_user_password",
+    "EMAIL_HOST":"smtp.gmail.com",
+    "EMAIL_PORT":"587",
+    "EMAIL_USER":"dummy@gmail.com",
+    "EMAIL_USE_TLS":"True",
+    "EMAIL_PASS":"emailpassword",
+    "EMAIL_FROM_USER":"dummy@gmail.com"
+    }
+
+
+requires a json formatted 'keyfile' also containing the Google Drive server-server credentials.
+see https://developers.google.com/identity/protocols/OAuth2ServiceAccount for more information
 
 USAGE
 ''' % (program_shortdesc, str(__date__))
@@ -113,7 +133,7 @@ USAGE
             raise(e)
         indent = len(program_name) * " "
         sys.stderr.write(program_name + ": " + repr(e) + "\n")
-        sys.stderr.write(indent + "  for help use --help")
+        sys.stderr.write(indent + "  for help use --help\n")
         return 2
 
 def drive_backup(args):
@@ -153,7 +173,10 @@ def drive_backup(args):
         emailPassword = get_secret("EMAIL_PASS")
         emailFromUser = get_secret("EMAIL_FROM_USER")
         if args.adminemail == "":
-            logger.info("No admin email specified using --email argument, no email logging enabled.")
+            if args.verbose:
+                sys.stdout.write("No admin email specified using --email argument, no email logging enabled.\n")
+            else:
+                logger.info("No admin email specified using --email argument, no email logging enabled.")
         else:
             isSecure = None
             if emailUseTLS == "True":
@@ -178,7 +201,6 @@ def drive_backup(args):
         for directory in directories:
             if os.path.exists(directory):
                 backuproot =  directory.replace(os.path.sep,'_')
-                utcnow = datetime.utcnow().isoformat()
                 backupfile = "%s%s%s.%s.gz" %('/tmp',os.path.sep, backuproot, datetime.now().isoformat())
                 if gdrive.verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
@@ -187,10 +209,16 @@ def drive_backup(args):
                 try:
                     run(["tar", "-czf", backupfile, directory], stderr=PIPE, check=True)
                 except CalledProcessError as e:
-                    if gdrive.verbose:
-                        sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
-                    logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
-                    continue
+                    # try again after a 5 second delay
+                    time.sleep(5)
+                    try:
+                        run(["tar", "-czf", backupfile, directory], stderr=PIPE, check=True)
+                    except CalledProcessError as e:
+                        if gdrive.verbose:
+                            sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
+                        else:
+                            logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                        continue
                 if gdrive.upload_file_to_folder(backupFolder.get('id'), backupfile) is not None:
                     successful.append(directory)
                 for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
@@ -202,17 +230,22 @@ def drive_backup(args):
                     except CalledProcessError as e:
                         if gdrive.verbose:
                             sys.stdout.write("unable to remove %s, Error='%s'\n" % (fileToRemove, e.stderr.decode()))
+                        else:
                             logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                         continue
-                oldFiles = gdrive.list_files_in_drive(datequery="< '%sZ'" % utcnow, namequery="contains '%s%s%s'" % ('/tmp', os.path.sep, backuproot))
+                oldFiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s%s%s'" % ('/tmp', os.path.sep, backuproot))
                 for file in oldFiles:
                     gdrive.delete_file(fileid=file.get('id'))
             else:
-                logger.info("directory %s doesn't exist. Ignoring" % directory)
                 if gdrive.verbose:
                     sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
-        smtpHandler.setLevel(logging.INFO)
-        logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
+                else:
+                    logger.info("directory %s doesn't exist. Ignoring" % directory)
+        if args.verbose:
+            sys.stdout.write("Uploaded the following directories to Google Drive: %s\n" % str(successful))
+        else:
+            smtpHandler.setLevel(logging.INFO)
+            logger.info("Uploaded the following directories to Google Drive: %s" % str(successful))
     return 0
 
 if __name__ == "__main__":

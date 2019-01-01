@@ -80,6 +80,22 @@ def main(argv=None): # IGNORE:C0111
   Distributed on an "AS IS" basis without warranties
   or conditions of any kind, either express or implied.
 
+Requires a json-formatted 'secretfile' containing various database and email information.
+Below is a generic example of the contents of '.database_secret.json':
+
+{
+    "MYSQLDB1NAME_DB_USER":"db1_username",
+    "MYSQLDB1NAME_DB_PASS":"db1_user_password",
+    "MYSQLDB2NAME_DB_USER":"db2_username",
+    "MYSQLDB2NAME_DB_PASS":"db2_user_password",
+    "EMAIL_HOST":"smtp.gmail.com",
+    "EMAIL_PORT":"587",
+    "EMAIL_USER":"dummy@gmail.com",
+    "EMAIL_USE_TLS":"True",
+    "EMAIL_PASS":"emailpassword",
+    "EMAIL_FROM_USER":"dummy@gmail.com"
+    }
+
 USAGE
 ''' % (program_shortdesc, str(__date__))
 
@@ -96,26 +112,17 @@ USAGE
 
         # Process arguments
         args = parser.parse_args()
-
-        directories = args.directories
-        backupdir = args.backupdir
-        keepdays = args.keepdays
-        secretfile = args.secretfile
-        verbose = args.verbose
-        testlog = args.testlog
-        adminemail = args.adminemail
-        if not os.path.isdir(backupdir):
-            os.makedirs(backupdir)
-        logging.basicConfig(filename=backupdir+"/backuplog.log", 
+        if not os.path.isdir(args.backupdir):
+            os.makedirs(args.backupdir)
+        logging.basicConfig(filename=args.backupdir+"/backuplog.log", 
                             format='%(levelname)s:%(asctime)s %(message)s', 
                             level=logging.DEBUG)
         if DEBUG:
-            for directory in directories:
+            for directory in args.directories:
                 sys.stdout.write("directory to backup: %s" % directory)
-            sys.stdout.write("backup dir = %s" % backupdir)
+            sys.stdout.write("backup dir = %s" % args.backupdir)
 
-        return zip_dirs(directories=directories, backupdir=backupdir, keepdays=keepdays,
-                            secretfile=secretfile, verbose=verbose, testlog=testlog, adminemail=adminemail)
+        return zip_dirs(args)
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
         return 0
@@ -124,20 +131,20 @@ USAGE
             raise(e)
         indent = len(program_name) * " "
         sys.stderr.write(program_name + ": " + repr(e) + "\n")
-        sys.stderr.write(indent + "  for help use --help")
+        sys.stderr.write(indent + "  for help use --help\n")
         return 2
     
 
     
-def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose=False,
-             testlog=False, adminemail=""):
+def zip_dirs(args):
     try:
-        with open(secretfile) as f:
+        with open(args.secretfile) as f:
             SECRETS=json.loads(f.read())
     except FileNotFoundError as e:
-        logger.error("Secretfile %s not found" % secretfile)
-        sys.stderr.write(e.strerror + ":\n")
-        sys.stderr.write(secretfile + "\n")
+        if args.verbose:
+            sys.stdout.write("Secretfile %s not found\n" % args.secretfile)
+        else:
+            logger.error("Secretfile %s not found" % args.secretfile)
         return -1
     def get_secret(setting, secrets=SECRETS):
         """
@@ -156,15 +163,18 @@ def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose
         emailUseTLS = get_secret("EMAIL_USE_TLS")
         emailPassword = get_secret("EMAIL_PASS")
         emailFromUser = get_secret("EMAIL_FROM_USER")
-        if adminemail == "":
-            logger.info("No admin email specified using --email argument, no email logging enabled.")
+        if args.adminemail == "":
+            if args.verbose:
+                sys.stdout.write("No admin email specified using --email argument, no email logging enabled.\n")
+            else:
+                logger.info("No admin email specified using --email argument, no email logging enabled.")
         else:
             isSecure = None
             if emailUseTLS == "True":
                 isSecure = ()
             smtpHandler = SMTPHandler((emailHost, emailPort), 
                                       emailFromUser, 
-                                      adminemail, 
+                                      args.adminemail, 
                                       emailSubject, 
                                       credentials=(emailUser, emailPassword,), 
                                       secure=isSecure)
@@ -172,15 +182,15 @@ def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose
             logger.addHandler(smtpHandler)
     except ImproperlyConfigured:
         pass
-    if testlog:
+    if args.testlog:
         logger.info("Test of logging capabilities for info messages")
         logger.error("Test of logging capabilities for error messages")
     else:
-        for directory in directories:
+        for directory in args.directories:
             if os.path.exists(directory):
                 backuproot =  directory.replace(os.path.sep,'_')
-                backupfile = "%s%s%s.%s.gz" %(backupdir,os.path.sep, backuproot, datetime.now().isoformat())
-                if verbose:
+                backupfile = "%s%s%s.%s.gz" %(args.backupdir,os.path.sep, backuproot, datetime.now().isoformat())
+                if args.verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
                     sys.stdout.write("Deleting files with this root name %s" % backuproot)
                     sys.stdout.write("using command: rm %s*" % backuproot)
@@ -189,39 +199,51 @@ def zip_dirs(directories=None, backupdir="", keepdays=-1, secretfile='', verbose
                 try:
                     run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
                 except CalledProcessError as e:
-                    if verbose:
-                        sys.stdout.write("directory=%s Error='%s'" % (directory, e.stderr.decode()))
-                    logger.error("directory=%s Error='%s'" % (directory, e.stderr.decode()))
-                    continue
-                if keepdays >= 0:
+                    # try again after a 5 second delay
+                    time.sleep(5)
+                    try:
+                        run(["tar", "-czf", backupfile, directory], stderr=PIPE, check=True)
+                    except CalledProcessError as e:
+                        if args.verbose:
+                            sys.stdout.write("unable to tar directory=%s Error='%s'\n" % (directory, e.stderr.decode()))
+                        else:
+                            logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
+                        continue
+                if args.keepdays >= 0:
                     now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
-                    for file in glob.glob(os.path.join(backupdir, backuproot + '*')):
-                        fullPath = os.path.join(backupdir, file)
+                    for file in glob.glob(os.path.join(args.backupdir, backuproot + '*')):
+                        fullPath = os.path.join(args.backupdir, file)
                         if os.path.isfile(fullPath):
                             mtime = os.path.getmtime(fullPath)
-                            if now - mtime >= keepdays * 86400:
+                            if now - mtime >= args.keepdays * 86400:
                                 # remove old files
                                 if DEBUG:
                                     sys.stdout.write("Deleting %s" % fullPath)
                                 try:
                                     os.remove(fullPath)
                                 except OSError as e:
-                                    if verbose:
-                                        sys.stdout.write("directory=%, Unable to remove file %s" % (directory, backupfile))
-                                    logger.error("directorye=%, Unable to remove file %s" % (directory, backupfile))
+                                    if args.verbose:
+                                        sys.stdout.write("directory=%, Unable to remove file %s\n" % (directory, backupfile))
+                                    else:
+                                        logger.error("directorye=%, Unable to remove file %s" % (directory, backupfile))
                                     continue
                 try:
                     os.chmod(backupfile, 0o600, follow_symlinks=True)
                 except OSError as e:
-                    if verbose:
-                        sys.stdout.write("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))
-                    logger.error("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile))  
-                logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
+                    if args.verbose:
+                        sys.stdout.write("directory=%, Unable to chmod 700 on file %s\n" % (directory, backupfile))
+                    else:
+                        logger.error("directory=%, Unable to chmod 700 on file %s" % (directory, backupfile)) 
+                if args.verbose:
+                    sys.stdout.write("deleted old files and tar'd and gzipped %s file size=%s to %s\n" % (directory, os.path.getsize(backupfile), backupfile))
+                else:
+                    logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
                 # remove files older than keepdays days old
             else:
-                logger.info("directory %s doesn't exist. Ignoring" % directory)
-                if verbose:
-                    sys.stdout.write("directory %s doesn't exist. Ignoring" % directory)
+                if args.verbose:
+                    sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
+                else:
+                    logger.info("directory %s doesn't exist. Ignoring" % directory)
     return 0
 
 if __name__ == "__main__":
