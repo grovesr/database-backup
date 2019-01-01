@@ -234,7 +234,7 @@ def drive_backup(args):
                         else:
                             logger.error("unable to remove %s, Error='%s'" % (fileToRemove, e.stderr.decode()))
                         continue
-                oldFiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s%s%s'" % (utcnow, '/tmp', os.path.sep, backuproot))
+                oldFiles = gdrive.list_files_in_drive(query="modifiedTime < '%sZ' and name contains '%s'" % (utcnow, backuproot))
                 for file in oldFiles:
                     gdrive.delete_file(fileid=file.get('id'))
             else:
