@@ -119,8 +119,8 @@ USAGE
                             level=logging.DEBUG)
         if DEBUG:
             for directory in args.directories:
-                sys.stdout.write("directory to backup: %s" % directory)
-            sys.stdout.write("backup dir = %s" % args.backupdir)
+                sys.stdout.write("directory to backup: %s\n" % directory)
+            sys.stdout.write("backup dir = %s\n" % args.backupdir)
 
         return zip_dirs(args)
     except KeyboardInterrupt:
@@ -192,10 +192,10 @@ def zip_dirs(args):
                 backupfile = "%s%s%s.%s.gz" %(args.backupdir,os.path.sep, backuproot, datetime.now().isoformat())
                 if args.verbose:
                     tarcommand = "tar -czf %s %s" % (backupfile, directory)
-                    sys.stdout.write("Deleting files with this root name %s" % backuproot)
-                    sys.stdout.write("using command: rm %s*" % backuproot)
-                    sys.stdout.write("Taring and gzipping %s to %s" % (directory, backupfile))
-                    sys.stdout.write("using command: %s" % tarcommand)
+                    sys.stdout.write("Deleting files with this root name %s\n" % backuproot)
+                    sys.stdout.write("using command: rm %s*\n" % backuproot)
+                    sys.stdout.write("Taring and gzipping %s to %s\n" % (directory, backupfile))
+                    sys.stdout.write("using command: %s\n" % tarcommand)
                 try:
                     run(["tar", "-czf",backupfile, directory], stderr=PIPE, check=True)
                 except CalledProcessError as e:
@@ -218,7 +218,7 @@ def zip_dirs(args):
                             if now - mtime >= args.keepdays * 86400:
                                 # remove old files
                                 if DEBUG:
-                                    sys.stdout.write("Deleting %s" % fullPath)
+                                    sys.stdout.write("Deleting %s\n" % fullPath)
                                 try:
                                     os.remove(fullPath)
                                 except OSError as e:
