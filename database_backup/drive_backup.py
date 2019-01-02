@@ -220,8 +220,9 @@ def drive_backup(args):
                         else:
                             logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
                         continue
-                if gdrive.upload_file_to_folder(backupFolder.get('id'), backupfile) is not None:
-                    successful.append(directory)
+                uploadedFile = gdrive.upload_file_to_folder(backupFolder.get('id'), backupfile) 
+                if uploadedFile is not None:
+                    successful.append(directory + (" (filename=%s, size=%s)" % (uploadedFile.get("name"), uploadedFile.get("size"))))
                 for rmfile in glob.glob("%s*" % os.path.join('/tmp', backuproot)):
                     fileToRemove = os.path.join('/tmp', rmfile)
                     try:
