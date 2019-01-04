@@ -195,7 +195,8 @@ def mysql_backup(args):
         logger.error("Test of logging capabilities for error messages")
     else:
         for database in args.databases:
-            backupfile = "%s/%s.%s.sql" %(args.backupdir, database, datetime.now().isoformat())
+            backuproot = os.path.join(args.backupdir, database)
+            backupfile = "%s.%s.sql" %(backuproot, datetime.now().isoformat())
             user = get_secret(database.upper() + "_DB_USER")
             password = get_secret(database.upper() + "_DB_PASS")
             if args.verbose:
@@ -242,6 +243,47 @@ def mysql_backup(args):
                             if DEBUG:
                                 sys.stdout.write("Deleting %s\n" % fullPath)
                             os.remove(fullPath)
+            # now copy the currently created file "backupfile" into the "Current" directory 
+            # under the backupdir directory, creating the "Current" directory if necessary 
+            # and deleting old files with the same root name
+            pathToCurrent = os.path.join(args.backupdir, "Current")
+            if not os.path.exists(pathToCurrent):
+                # create Current dir
+                try:
+                    os.mkdir(pathToCurrent)
+                except OSError as e:
+                    if args.verbose:
+                        sys.stdout.write("unable to create %s directory\n" % pathToCurrent)
+                    else:
+                        logger.error("unable to create %s directory\n" % pathToCurrent)
+                    return -1
+            else:
+                # delete links with same root name and make a link to the just created backupfile
+                if not os.path.isdir(pathToCurrent):
+                    if args.verbose:
+                        sys.stdout.write("unable to create %s directory it already exists as a file\n" % pathToCurrent)
+                    else:
+                        logger.error("unable to create %s directory it already exists as a file\n" % pathToCurrent)
+                    return -1
+                for file in glob.glob(os.path.join(pathToCurrent, "%s*" % database)):
+                    if os.path.islink(file):
+                        try:
+                            os.remove(file)
+                        except OSError as e:
+                            if args.verbose:
+                                sys.stdout.write("database=%, Unable to remove current backup file %s\n" % (database, file))
+                            else:
+                                logger.error("database=%, Unable to remove current backup file %s" % (database, file))
+                            continue
+                # create link to current backupfile in "Current"
+                try:
+                    os.symlink(backupfile + ".gz", os.path.join(pathToCurrent, os.path.basename(backupfile)+".gz"))
+                except OSError as e:
+                    if args.verbose:
+                        sys.stdout.write("database=%, Unable to create link to current backup file %s\n" % (database, os.path.join(pathToCurrent, os.path.basename(backupfile)+".gz")))
+                    else:
+                        logger.error("database=%, Unable to create link to current backup file %s" % (database, os.path.join(pathToCurrent, os.path.basename(backupfile)+".gz")))
+                 
     return 0
 
 if __name__ == "__main__":

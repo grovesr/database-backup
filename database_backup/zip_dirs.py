@@ -210,6 +210,7 @@ def zip_dirs(args):
                             logger.error("unable to tar directory=%s Error='%s'" % (directory, e.stderr.decode()))
                         continue
                 if args.keepdays >= 0:
+                    # remove files older than keepdays days old
                     now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
                     for file in glob.glob(os.path.join(args.backupdir, backuproot + '*')):
                         fullPath = os.path.join(args.backupdir, file)
@@ -223,9 +224,9 @@ def zip_dirs(args):
                                     os.remove(fullPath)
                                 except OSError as e:
                                     if args.verbose:
-                                        sys.stdout.write("directory=%, Unable to remove file %s\n" % (directory, backupfile))
+                                        sys.stdout.write("directory=%, Unable to remove file %s\n" % (directory, file))
                                     else:
-                                        logger.error("directorye=%, Unable to remove file %s" % (directory, backupfile))
+                                        logger.error("directorye=%, Unable to remove file %s" % (directory, file))
                                     continue
                 try:
                     os.chmod(backupfile, 0o600, follow_symlinks=True)
@@ -238,7 +239,48 @@ def zip_dirs(args):
                     sys.stdout.write("deleted old files and tar'd and gzipped %s file size=%s to %s\n" % (directory, os.path.getsize(backupfile), backupfile))
                 else:
                     logger.info("deleted old files and tar'd and gzipped %s file size=%s to %s" % (directory, os.path.getsize(backupfile), backupfile))
-                # remove files older than keepdays days old
+                # now copy the currently created file "backupfile" into the "Current" directory 
+                # under the backupdir directory, creating the "Current" directory if necessary 
+                # and deleting old files with the same root name
+                pathToCurrent = os.path.join(args.backupdir, "Current")
+                if not os.path.exists(pathToCurrent):
+                    # create Current dir
+                    try:
+                        os.mkdir(pathToCurrent)
+                    except OSError as e:
+                        if args.verbose:
+                            sys.stdout.write("unable to create %s directory\n" % pathToCurrent)
+                        else:
+                            logger.error("unable to create %s directory\n" % pathToCurrent)
+                        return -1
+                else:
+                    # delete links with same root name and make a link to the just created backupfile
+                    if not os.path.isdir(pathToCurrent):
+                        if args.verbose:
+                            sys.stdout.write("unable to create %s directory it already exists as a file\n" % pathToCurrent)
+                        else:
+                            logger.error("unable to create %s directory it already exists as a file\n" % pathToCurrent)
+                        return -1
+                    for file in glob.glob(os.path.join(pathToCurrent, "%s*" % backuproot)):
+                        fullPath = os.path.join(pathToCurrent, file)
+                        if os.path.isfile(fullPath):
+                            try:
+                                os.remove(fullPath)
+                            except OSError as e:
+                                if args.verbose:
+                                    sys.stdout.write("directory=%, Unable to remove current backup file %s\n" % (directory, file))
+                                else:
+                                    logger.error("directorye=%, Unable to remove current backup file %s" % (directory, file))
+                                continue
+                    # create link to current backupfile in "Current"
+                    try:
+                        os.symlink(backupfile, os.path.join(pathToCurrent, os.path.basename(backupfile)))
+                    except OSError as e:
+                        if args.verbose:
+                            sys.stdout.write("directory=%, Unable to create link to current backup file %s\n" % (directory, os.path.join(pathToCurrent, os.path.basename(backupfile))))
+                        else:
+                            logger.error("directory=%, Unable to create link to current backup file %s" % (directory, os.path.join(pathToCurrent, os.path.basename(backupfile))))
+                        continue
             else:
                 if args.verbose:
                     sys.stdout.write("directory %s doesn't exist. Ignoring\n" % directory)
