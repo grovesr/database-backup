@@ -235,14 +235,13 @@ def mysql_backup(args):
             if args.keepdays >= 0:
                 now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
                 for file in glob.glob(os.path.join(args.backupdir, database + '*')):
-                    fullPath = os.path.join(args.backupdir, file)
-                    if os.path.isfile(fullPath):
-                        mtime = os.path.getmtime(fullPath)
+                    if os.path.isfile(file):
+                        mtime = os.path.getmtime(file)
                         if now - mtime >= args.keepdays * 86400:
                             # remove old files
                             if DEBUG:
-                                sys.stdout.write("Deleting %s\n" % fullPath)
-                            os.remove(fullPath)
+                                sys.stdout.write("Deleting %s\n" % file)
+                            os.remove(file)
             # now copy the currently created file "backupfile" into the "Current" directory 
             # under the backupdir directory, creating the "Current" directory if necessary 
             # and deleting old files with the same root name

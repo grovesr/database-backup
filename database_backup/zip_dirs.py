@@ -213,15 +213,14 @@ def zip_dirs(args):
                     # remove files older than keepdays days old
                     now = time.time() - 1 # 1 second fudge factor so we don't delete a just created file if keepdays = 0
                     for file in glob.glob(os.path.join(args.backupdir, backuproot + '*')):
-                        fullPath = os.path.join(args.backupdir, file)
-                        if os.path.isfile(fullPath):
-                            mtime = os.path.getmtime(fullPath)
+                        if os.path.isfile(file):
+                            mtime = os.path.getmtime(file)
                             if now - mtime >= args.keepdays * 86400:
                                 # remove old files
                                 if DEBUG:
-                                    sys.stdout.write("Deleting %s\n" % fullPath)
+                                    sys.stdout.write("Deleting %s\n" % file)
                                 try:
-                                    os.remove(fullPath)
+                                    os.remove(file)
                                 except OSError as e:
                                     if args.verbose:
                                         sys.stdout.write("directory=%, Unable to remove file %s\n" % (directory, file))
