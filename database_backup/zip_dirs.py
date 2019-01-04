@@ -273,7 +273,7 @@ def zip_dirs(args):
                                 continue
                     # create link to current backupfile in "Current"
                     try:
-                        os.symlink(backupfile, os.path.join(pathToCurrent, os.path.basename(backupfile)))
+                        os.link(backupfile, os.path.join(pathToCurrent, os.path.basename(backupfile)))
                     except OSError as e:
                         if args.verbose:
                             sys.stdout.write("directory=%, Unable to create link to current backup file %s\n" % (directory, os.path.join(pathToCurrent, os.path.basename(backupfile))))

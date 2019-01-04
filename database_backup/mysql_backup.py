@@ -276,7 +276,7 @@ def mysql_backup(args):
                             continue
                 # create link to current backupfile in "Current"
                 try:
-                    os.symlink(backupfile + ".gz", os.path.join(pathToCurrent, os.path.basename(backupfile)+".gz"))
+                    os.link(backupfile + ".gz", os.path.join(pathToCurrent, os.path.basename(backupfile)+".gz"))
                 except OSError as e:
                     if args.verbose:
                         sys.stdout.write("database=%, Unable to create link to current backup file %s\n" % (database, os.path.join(pathToCurrent, os.path.basename(backupfile)+".gz")))
