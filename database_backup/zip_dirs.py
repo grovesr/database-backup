@@ -262,7 +262,7 @@ def zip_dirs(args):
                         return -1
                     for file in glob.glob(os.path.join(pathToCurrent, "%s*" % backuproot)):
                         fullPath = os.path.join(pathToCurrent, file)
-                        if os.path.islink(fullPath):
+                        if os.path.isfile(fullPath):
                             try:
                                 os.remove(fullPath)
                             except OSError as e:

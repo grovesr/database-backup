@@ -265,7 +265,7 @@ def mysql_backup(args):
                         logger.error("unable to create %s directory it already exists as a file\n" % pathToCurrent)
                     return -1
                 for file in glob.glob(os.path.join(pathToCurrent, "%s*" % database)):
-                    if os.path.islink(file):
+                    if os.path.isfile(file):
                         try:
                             os.remove(file)
                         except OSError as e:
